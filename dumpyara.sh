@@ -152,6 +152,16 @@ else
     git clone -q --recurse-submodules https://github.com/AndroidDumps/Firmware_extractor "${PWD}"/external/Firmware_extractor
 fi
 
+# Retrive mkbootimg tools from techdiwas/mkbootimg-tools
+if ! [[ -f "${PWD}/external/Firmware_extractor/tools/mkboot" ]]; then
+    curl -s -Lo "${PWD}"/external/Firmware_extractor/tools/mkboot https://raw.githubusercontent.com/techdiwas/mkbootimg-tools/refs/heads/master/mkboot
+    chmod +x "${PWD}"/external/Firmware_extractor/tools/mkboot
+fi
+
+if ! [[ -f "${PWD}/external/Firmware_extractor/tools/mkbootfs" ]]; then
+    curl -s -Lo "${PWD}"/external/Firmware_extractor/tools/mkbootfs https://raw.githubusercontent.com/techdiwas/mkbootimg-tools/refs/heads/master/mkbootfs
+fi
+
 # Extract input via 'Firmware_extractor'
 [[ ! -d "${INPUT}" ]] && \
     bash "$PWD"/external/Firmware_extractor/extractor.sh "${INPUT}" "${WORKING}" || LOGF "Extraction failed. Aborting."
@@ -163,7 +173,7 @@ if ! [[ -f "${PWD}"/external/extract-ikconfig ]]; then
 fi
 
 # Set path for tools
-UNPACKBOOTIMG="${PWD}"/external/Firmware_extractor/tools/unpackbootimg
+UNPACKBOOTIMG="${PWD}"/external/Firmware_extractor/tools/mkboot
 VMLINUX_TO_ELF="uvx -q --from git+https://github.com/marin-m/vmlinux-to-elf@master"
 EXTRACT_IKCONFIG="${PWD}"/external/extract-ikconfig
 FSCK_EROFS="${PWD}"/external/Firmware_extractor/tools/fsck.erofs
@@ -222,17 +232,14 @@ for image in boot vendor_boot vendor_kernel_boot; do
 
         # Unpack image's content
         LOGI "Extracting '${image}' content..."
-        ${UNPACKBOOTIMG} -i "${image}.img" -o "${image}/" > /dev/null || \
-            LOGE "Extraction via 'unpackbootimg' unsuccessful."
-
-        ## Retrive image's ramdisk, and extract it
-        unlz4 "${image}"/"${image}".img-*ramdisk "${image}/ramdisk.lz4" >> /dev/null 2>&1
-        7z -snld x "${image}/ramdisk.lz4" -o"${image}/ramdisk" >> /dev/null 2>&1  || \
-            LOGI "Failed to extract ramdisk."
-
-        ## Clean-up
-        rm -rf "${image}/ramdisk.lz4"
-        rm -rf "${image}/${image}".img-*ramdisk
+        # Run mkboot and suppress output
+        ${UNPACKBOOTIMG} "${image}.img" "${image}" > /dev/null 2>&1
+        # Check if extraction actually produced files
+        if [[ -n "$(ls -A ${image} 2>/dev/null)" ]]; then
+            LOGI "Extraction of '${image}' successful."
+        else
+            LOGE "Extraction via 'mkboot' unsuccessful for '${image}'."
+        fi
 
         # Extract 'dtb' via 'extract-dtb'
         LOGI "Trying to extract device-tree(s) from '${image}'..." 
